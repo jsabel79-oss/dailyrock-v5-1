@@ -2,24 +2,10 @@
   "name": "dailyrock-v5-1",
   "version": "0.9.0",
   "private": true,
-  "main": "index.ts",
   "scripts": {
-    "start": "node scripts/start-expo-lan.js --go",
-    "android": "node scripts/start-expo-lan.js --android --go",
-    "ios": "node scripts/start-expo-lan.js --ios --go",
-    "web": "expo start --web",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test"
-  },
-  "dependencies": {
-    "expo": "~54.0.0",
-    "expo-status-bar": "~3.0.8",
-    "react": "19.1.0",
-    "react-native": "0.81.4",
-    "react-native-safe-area-context": "~5.6.0"
-  },
-  "devDependencies": {
-    "@types/react": "~19.1.10",
-    "typescript": "~5.9.2"
+    "start": "node scripts/serve-web.js",
+    "dev": "node scripts/serve-web.js",
+    "test": "node --test",
+    "typecheck": "node --check src/app.js && node --check scripts/serve-web.js"
   }
 }
