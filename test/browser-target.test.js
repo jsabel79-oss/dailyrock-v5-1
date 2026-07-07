@@ -28,6 +28,8 @@ test('configures the web server to bind locally and open the browser', () => {
   assert.equal(webConfig.host, '0.0.0.0');
   assert.equal(webConfig.port, 5173);
   assert.equal(webConfig.open, true);
+  assert.deepEqual(webConfig.dependencies, ['react', 'react-dom', 'react-native-web']);
+  assert.deepEqual(webConfig.aliases, { reactNative: 'react-native-web' });
 });
 
 test('prints reachable LAN URLs for Windows browser access from another device when needed', () => {
@@ -75,4 +77,11 @@ test('uses the native Windows command that opens the default browser', () => {
 test('allows browser opening to be disabled for automation', () => {
   assert.equal(shouldOpenBrowser(['node', 'scripts/serve-web.js', '--no-open']), false);
   assert.equal(shouldOpenBrowser(['node', 'scripts/serve-web.js', '--open']), true);
+});
+
+
+test('declares React web dependencies required by Expo and React Native Web tooling', () => {
+  assert.equal(packageJson.dependencies.react, '19.1.0');
+  assert.equal(packageJson.dependencies['react-dom'], '19.1.0');
+  assert.equal(packageJson.dependencies['react-native-web'], '0.21.0');
 });
