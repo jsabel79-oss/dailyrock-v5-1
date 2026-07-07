@@ -7,23 +7,27 @@ Expo Go and iPhone workflows are intentionally out of scope for this build until
 ## Run the app from a clean checkout
 
 ```sh
-npm ci
-npm start
+npm install
+npm run web
 ```
 
-The server listens on all interfaces by default and prints a Windows browser URL, usually <http://localhost:5173>. Open that URL in Microsoft Edge, Chrome, Firefox, or another modern browser on Windows.
+The server listens on all interfaces by default and prints a Windows browser URL, usually <http://localhost:5173>, and automatically opens it. If your browser blocks automatic launch, open that URL in Microsoft Edge, Chrome, Firefox, or another modern browser on Windows.
 
 If you need a different port, start the app with an explicit `PORT` value:
 
 ```sh
-PORT=5174 npm start
+PORT=5174 npm run web
 ```
 
 On Windows PowerShell, use:
 
 ```powershell
-$env:PORT=5174; npm start
+$env:PORT=5174; npm run web
 ```
+
+## Web configuration
+
+The browser server is configured in `web.config.json`. It binds to `0.0.0.0`, defaults to port `5173`, and opens the default browser when launched through `npm run web`. The app has no required runtime npm dependencies; `npm install` restores the lockfile state and the built-in Node server handles local web delivery.
 
 ## Development target
 

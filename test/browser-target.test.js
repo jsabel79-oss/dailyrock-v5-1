@@ -5,11 +5,13 @@ const os = require('node:os');
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const readme = fs.readFileSync('README.md', 'utf8');
-const { localNetworkUrls, printStartupUrls } = require('../scripts/serve-web');
+const webConfig = JSON.parse(fs.readFileSync('web.config.json', 'utf8'));
+const { browserOpenCommand, localNetworkUrls, printStartupUrls, shouldOpenBrowser } = require('../scripts/serve-web');
 
-test('uses the local browser server as the primary start target', () => {
-  assert.equal(packageJson.scripts.start, 'node scripts/serve-web.js');
-  assert.equal(packageJson.scripts.dev, 'node scripts/serve-web.js');
+test('provides npm run web as the primary Windows browser target', () => {
+  assert.equal(packageJson.scripts.web, 'node scripts/serve-web.js --open');
+  assert.equal(packageJson.scripts.start, 'npm run web');
+  assert.equal(packageJson.scripts.dev, 'node scripts/serve-web.js --open');
 });
 
 test('keeps Expo commands out of the active package scripts', () => {
@@ -18,8 +20,14 @@ test('keeps Expo commands out of the active package scripts', () => {
 
 test('documents Windows browser as the primary target', () => {
   assert.match(readme, /Windows browser/i);
-  assert.match(readme, /primary/i);
+  assert.match(readme, /npm run web/i);
   assert.doesNotMatch(readme, /Verify on a physical iPhone/i);
+});
+
+test('configures the web server to bind locally and open the browser', () => {
+  assert.equal(webConfig.host, '0.0.0.0');
+  assert.equal(webConfig.port, 5173);
+  assert.equal(webConfig.open, true);
 });
 
 test('prints reachable LAN URLs for Windows browser access from another device when needed', () => {
@@ -54,4 +62,17 @@ test('startup copy points users to localhost in a Windows browser, not iPhone se
 
   assert.match(logs.join('\n'), /Windows browser/i);
   assert.doesNotMatch(logs.join('\n'), /iPhone/i);
+});
+
+test('uses the native Windows command that opens the default browser', () => {
+  assert.deepEqual(browserOpenCommand('http://localhost:5173', 'win32'), {
+    command: 'cmd',
+    args: ['/c', 'start', '', 'http://localhost:5173'],
+    options: { shell: false, stdio: 'ignore' },
+  });
+});
+
+test('allows browser opening to be disabled for automation', () => {
+  assert.equal(shouldOpenBrowser(['node', 'scripts/serve-web.js', '--no-open']), false);
+  assert.equal(shouldOpenBrowser(['node', 'scripts/serve-web.js', '--open']), true);
 });
