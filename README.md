@@ -1,6 +1,8 @@
 # Daily Rock V5.1
 
-Daily Rock is a browser application that can be opened from a desktop browser or from Safari on a physical iPhone connected to the same network as the development machine. The app keeps the same schedule, Ghost template, Lists, Settings, edit modal, time snapping, drag-to-move, resize, and dark UI direction.
+Daily Rock V5.1 is now a browser-first application for everyday use on Windows. Open it in a Windows browser and keep using the same Today schedule, Ghost template day, Lists, Settings, edit modal, time snapping, drag-to-move, resize, zoom, and dark UI direction while new features are built.
+
+Expo Go and iPhone workflows are intentionally out of scope for this build until the Windows browser experience is complete and working.
 
 ## Run the app from a clean checkout
 
@@ -9,21 +11,20 @@ npm ci
 npm start
 ```
 
-The server listens on all interfaces by default and prints both:
+The server listens on all interfaces by default and prints a Windows browser URL, usually <http://localhost:5173>. Open that URL in Microsoft Edge, Chrome, Firefox, or another modern browser on Windows.
 
-- a local desktop URL, usually <http://localhost:5173>
-- one or more LAN URLs, such as `http://192.168.1.20:5173`
-
-## Verify on a physical iPhone
-
-1. Connect the iPhone to the same Wi-Fi network as the computer running `npm start`.
-2. Open the printed LAN URL in Safari on the iPhone. Do not use `localhost` on the iPhone, because that points back to the phone itself rather than the development machine.
-3. If the LAN URL does not load, confirm that the computer firewall allows inbound connections to the printed port, then restart with an explicit port if needed:
+If you need a different port, start the app with an explicit `PORT` value:
 
 ```sh
-PORT=5173 npm start
+PORT=5174 npm start
+```
+
+On Windows PowerShell, use:
+
+```powershell
+$env:PORT=5174; npm start
 ```
 
 ## Development target
 
-The primary launch target is the browser over localhost or LAN. Expo commands are intentionally not part of the active scripts for this browser build.
+The primary launch target is the Windows browser over localhost. Optional LAN URLs are printed only for convenience when another browser on the same network needs to reach the running development server. Expo commands are intentionally not part of the active scripts for this browser build.
