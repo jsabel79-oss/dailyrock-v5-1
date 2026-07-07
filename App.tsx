@@ -50,6 +50,25 @@ function timeLabel(minutes: number) {
   const h = Math.floor(minutes / 60); const m = minutes % 60; const hour = ((h + 11) % 12) + 1;
   return `${hour}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
+function clockValue(minutes: number) {
+  const safe = clamp(snap(minutes), START_HOUR * 60, END_HOUR * 60 - MIN_DURATION);
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+}
+function parseClock(value: string, fallback: number) {
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?$/i);
+  if (!match) return fallback;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? 0);
+  const suffix = match[3]?.toLowerCase();
+  if (Number.isNaN(hour) || Number.isNaN(minute) || minute > 59) return fallback;
+  if (suffix === 'pm' && hour < 12) hour += 12;
+  if (suffix === 'am' && hour === 12) hour = 0;
+  return clamp(hour * 60 + minute, START_HOUR * 60, END_HOUR * 60 - MIN_DURATION);
+}
+function parseDuration(value: string, fallback: number) {
+  const next = Number(value.replace(/[^0-9]/g, ''));
+  return Number.isFinite(next) && next > 0 ? next : fallback;
+}
 function topFor(min: number, pxPerMin: number) { return (min - START_HOUR * 60) * pxPerMin; }
 function newActivity(title: string, start: number, duration: number, category = 'Personal'): Activity {
   return { id: `${title}-${Date.now()}-${Math.round(Math.random() * 1000)}`, title, category, start, duration, color: palette[category] ?? palette.Personal };
@@ -59,26 +78,28 @@ function distance(touches: any[]) {
   return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
 }
 
-function ActivityTile({ item, onChange, onEdit, faded, pxPerMin }: { item: Activity; faded: boolean; pxPerMin: number; onEdit: () => void; onChange: (next: Activity) => void }) {
-  const origin = useRef(item).current;
+function ActivityTile({ item, onChange, onEdit, onInteraction, faded, pxPerMin }: { item: Activity; faded: boolean; pxPerMin: number; onEdit: () => void; onInteraction: () => void; onChange: (next: Activity) => void }) {
+  const dragOrigin = useRef(item);
+  const resizeOrigin = useRef(item);
   const moved = useRef(false);
-  origin.start = item.start; origin.duration = item.duration;
   const drag = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 2,
-    onPanResponderGrant: () => { moved.current = false; },
+    onPanResponderGrant: () => { moved.current = false; dragOrigin.current = item; onInteraction(); },
     onPanResponderMove: (_, g) => {
       moved.current = moved.current || Math.abs(g.dy) > 4;
       const delta = snap(g.dy / pxPerMin);
-      const maxStart = END_HOUR * 60 - origin.duration;
-      onChange({ ...origin, start: clamp(origin.start + delta, START_HOUR * 60, maxStart) });
+      const maxStart = END_HOUR * 60 - dragOrigin.current.duration;
+      onChange({ ...dragOrigin.current, start: clamp(dragOrigin.current.start + delta, START_HOUR * 60, maxStart) });
     },
-    onPanResponderRelease: () => { if (!moved.current) onEdit(); },
+    onPanResponderRelease: () => { onInteraction(); if (!moved.current) onEdit(); },
   });
   const resizeBottom = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
-    onPanResponderMove: (_, g) => onChange({ ...origin, duration: clamp(snap(origin.duration + g.dy / pxPerMin), MIN_DURATION, END_HOUR * 60 - origin.start) }),
+    onPanResponderGrant: () => { resizeOrigin.current = item; onInteraction(); },
+    onPanResponderMove: (_, g) => onChange({ ...resizeOrigin.current, duration: clamp(snap(resizeOrigin.current.duration + g.dy / pxPerMin), MIN_DURATION, END_HOUR * 60 - resizeOrigin.current.start) }),
+    onPanResponderRelease: onInteraction,
   });
   return (
     <Animated.View style={[styles.tile, { top: topFor(item.start, pxPerMin), height: item.duration * pxPerMin, borderColor: item.color, opacity: faded ? 0.46 : 1 }]} {...drag.panHandlers}>
@@ -96,13 +117,15 @@ function Schedule({ data, setData, onEdit, onCreate, showNow = false }: { data: 
   const [isPinching, setIsPinching] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const pinch = useRef({ distance: 0, px: INITIAL_PX_PER_MIN });
+  const suppressCreate = useRef(false);
+  const markActivityInteraction = () => { suppressCreate.current = true; setTimeout(() => { suppressCreate.current = false; }, 120); };
   useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id); }, []);
   useEffect(() => { requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 7 * 60 * pxPerMin - 8, animated: false })); }, []);
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
   const timelineHeight = (END_HOUR - START_HOUR) * 60 * pxPerMin;
   return <ScrollView ref={scrollRef} scrollEnabled={!isPinching} style={styles.scroller} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-    <Pressable disabled={isPinching} onPress={(event) => onCreate(clamp(snap(event.nativeEvent.locationY / pxPerMin), 0, END_HOUR * 60 - MIN_DURATION))}>
+    <Pressable disabled={isPinching} onPress={(event) => { if (suppressCreate.current) return; onCreate(clamp(snap(event.nativeEvent.locationY / pxPerMin), 0, END_HOUR * 60 - MIN_DURATION)); }}>
       <View style={[styles.timelineWrap, { height: timelineHeight + 80 }]}
         onTouchStart={(e) => { if (e.nativeEvent.touches.length === 2) { setIsPinching(true); pinch.current = { distance: distance(e.nativeEvent.touches), px: pxPerMin }; } }}
         onTouchMove={(e) => { if (e.nativeEvent.touches.length === 2 && pinch.current.distance > 0) setPxPerMin(clamp(pinch.current.px * (distance(e.nativeEvent.touches) / pinch.current.distance), MIN_PX_PER_MIN, MAX_PX_PER_MIN)); }}
@@ -110,7 +133,7 @@ function Schedule({ data, setData, onEdit, onCreate, showNow = false }: { data: 
         {hours.map(h => <View key={h} style={[styles.hourRow, { top: (h - START_HOUR) * 60 * pxPerMin }]}><Text style={styles.hourText}>{timeLabel(h * 60)}</Text><View style={styles.hourLine} /></View>)}
         <View style={[styles.windowHint, { top: 7 * 60 * pxPerMin }]}><Text style={styles.windowHintText}>Default day view starts here</Text></View>
         {showNow && nowMinutes >= START_HOUR * 60 && nowMinutes <= END_HOUR * 60 && <View style={[styles.nowLine, { top: topFor(nowMinutes, pxPerMin) }]}><View style={styles.nowDot} /><Text style={styles.nowText}>NOW</Text></View>}
-        {data.map(item => <ActivityTile key={item.id} item={item} pxPerMin={pxPerMin} faded={showNow && item.start + item.duration < nowMinutes} onEdit={() => onEdit(item)} onChange={(next) => setData(data.map(x => x.id === item.id ? next : x))} />)}
+        {data.map(item => <ActivityTile key={item.id} item={item} pxPerMin={pxPerMin} faded={showNow && item.start + item.duration < nowMinutes} onEdit={() => onEdit(item)} onInteraction={markActivityInteraction} onChange={(next) => setData(data.map(x => x.id === item.id ? next : x))} />)}
       </View>
     </Pressable>
   </ScrollView>;
@@ -171,6 +194,10 @@ function EditModal({ editing, setEditing, onSave, onDelete }: { editing: Editing
     {!isTemplate && <><Text style={styles.fieldLabel}>Category</Text><TextInput style={styles.compactField} value={draft.category} placeholder="Category" placeholderTextColor="#64748B" onChangeText={(category) => updateActivity({ category })} /><View style={styles.chipGrid}>{categories.map(category => <Pressable key={category} style={[styles.chip, draft.category === category && styles.chipActive, { borderColor: palette[category] }]} onPress={() => updateActivity({ category })}><View style={[styles.chipDot, { backgroundColor: palette[category] }]} /><Text style={[styles.chipText, draft.category === category && styles.chipTextActive]}>{category}</Text></Pressable>)}</View></>}
     {!isTemplate && <><Text style={styles.fieldLabel}>Color</Text><View style={styles.colorRow}>{Object.entries(palette).map(([name, color]) => <Pressable key={name} accessibilityLabel={`${name} color`} style={[styles.colorChip, { backgroundColor: color }, draft.color === color && styles.colorChipActive]} onPress={() => updateActivity({ color })} />)}</View></>}
     <Text style={styles.modalMeta}>{timeLabel(isTemplate ? editing.start : draft.start)} • {(isTemplate ? editing.duration : draft.duration)} min</Text>
+    <View style={styles.timeEditorRow}>
+      <View style={styles.timeEditorCell}><Text style={styles.fieldLabel}>Start time</Text><TextInput style={styles.compactField} value={clockValue(isTemplate ? editing.start : draft.start)} keyboardType="numbers-and-punctuation" placeholder="09:00" placeholderTextColor="#64748B" onChangeText={(value) => updateTime(parseClock(value, isTemplate ? editing.start : draft.start), isTemplate ? editing.duration : draft.duration)} /></View>
+      <View style={styles.timeEditorCell}><Text style={styles.fieldLabel}>Duration</Text><TextInput style={styles.compactField} value={String(isTemplate ? editing.duration : draft.duration)} keyboardType="number-pad" placeholder="30" placeholderTextColor="#64748B" onChangeText={(value) => updateTime(isTemplate ? editing.start : draft.start, parseDuration(value, isTemplate ? editing.duration : draft.duration))} /></View>
+    </View>
     <View style={styles.controlGrid}>{[-30,-15,15,30].map(v => <Pressable key={`s${v}`} style={styles.controlBtn} onPress={() => updateTime((isTemplate ? editing.start : draft.start) + v, isTemplate ? editing.duration : draft.duration)}><Text style={styles.controlText}>{v > 0 ? '+' : ''}{v} start</Text></Pressable>)}{[-15,15,30,60].map(v => <Pressable key={`d${v}`} style={styles.controlBtn} onPress={() => updateTime(isTemplate ? editing.start : draft.start, (isTemplate ? editing.duration : draft.duration) + v)}><Text style={styles.controlText}>{v > 0 ? '+' : ''}{v} min</Text></Pressable>)}</View>
     <View style={styles.modalActions}><Pressable style={styles.secondaryBtn} onPress={() => setEditing(null)}><Text style={styles.secondaryText}>Cancel</Text></Pressable>{!isTemplate && <Pressable style={styles.deleteBtn} onPress={() => onDelete(editing.schedule, editing.id)}><Text style={styles.deleteText}>Delete</Text></Pressable>}<Pressable style={styles.saveBtn} onPress={save}><Text style={styles.saveText}>{isTemplate ? 'Insert' : 'Save'}</Text></Pressable></View>
   </View></View></Modal>;
@@ -184,5 +211,5 @@ const styles = StyleSheet.create({
   nav: { position: 'absolute', left: 14, right: 14, bottom: 12, height: 72, borderRadius: 28, backgroundColor: 'rgba(15,23,42,0.96)', flexDirection: 'row', padding: 8, borderWidth: 1, borderColor: '#1E293B' }, navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 22 }, navActive: { backgroundColor: '#F97316' }, navText: { color: '#64748B', fontSize: 11, fontWeight: '800', marginTop: 3 }, navTextActive: { color: '#FFF7ED' }, navIcon: { color: '#64748B', fontSize: 20, fontWeight: '900' }, navIconActive: { color: '#FFF7ED' },
   copyBar: { marginHorizontal: 18, marginBottom: 8, padding: 12, backgroundColor: '#111827', borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, copyText: { color: '#E2E8F0', fontWeight: '800' }, copyBtn: { backgroundColor: '#F97316', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14 }, copyBtnText: { color: '#FFF7ED', fontWeight: '900' },
   panel: { flex: 1, paddingHorizontal: 18, paddingTop: 4, paddingBottom: 100 }, listItem: { backgroundColor: '#121826', borderRadius: 22, borderWidth: 1, borderColor: '#1E293B', padding: 18, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, listTitle: { color: '#F8FAFC', fontSize: 18, fontWeight: '900' }, listMeta: { color: '#94A3B8', marginTop: 4, fontWeight: '700' }, setting: { backgroundColor: '#121826', borderRadius: 22, borderWidth: 1, borderColor: '#1E293B', padding: 18, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, settingText: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' }, addIcon: { color: '#F97316', fontSize: 30, fontWeight: '900' }, checkIcon: { color: '#22C55E', fontSize: 24, fontWeight: '900' },
-  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }, modalCard: { backgroundColor: '#111827', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 22, borderWidth: 1, borderColor: '#1E293B' }, modalKicker: { color: '#F97316', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }, textField: { color: '#F8FAFC', fontSize: 24, fontWeight: '900', marginTop: 8, marginBottom: 12, padding: 12, borderRadius: 16, backgroundColor: '#1E293B' }, compactField: { color: '#F8FAFC', fontSize: 15, fontWeight: '800', marginBottom: 10, padding: 10, borderRadius: 14, backgroundColor: '#1E293B' }, fieldLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 4, marginBottom: 8 }, chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }, chip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#121826' }, chipActive: { backgroundColor: '#1E293B' }, chipDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 }, chipText: { color: '#94A3B8', fontSize: 12, fontWeight: '900' }, chipTextActive: { color: '#F8FAFC' }, colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 }, colorChip: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'transparent' }, colorChipActive: { borderColor: '#F8FAFC' }, modalTitle: { color: '#F8FAFC', fontSize: 28, fontWeight: '900', marginTop: 4 }, modalMeta: { color: '#CBD5E1', fontWeight: '800', marginTop: 4, marginBottom: 16 }, controlGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, controlBtn: { width: (width - 62) / 2, padding: 13, borderRadius: 16, backgroundColor: '#1E293B', alignItems: 'center' }, controlText: { color: '#E2E8F0', fontWeight: '900' }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 18 }, secondaryBtn: { padding: 13 }, secondaryText: { color: '#94A3B8', fontWeight: '900' }, deleteBtn: { backgroundColor: '#3F1D1D', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 13 }, deleteText: { color: '#FCA5A5', fontWeight: '900' }, saveBtn: { backgroundColor: '#F97316', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 13 }, saveText: { color: '#FFF7ED', fontWeight: '900' },
+  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }, modalCard: { backgroundColor: '#111827', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 22, borderWidth: 1, borderColor: '#1E293B' }, modalKicker: { color: '#F97316', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }, textField: { color: '#F8FAFC', fontSize: 24, fontWeight: '900', marginTop: 8, marginBottom: 12, padding: 12, borderRadius: 16, backgroundColor: '#1E293B' }, compactField: { color: '#F8FAFC', fontSize: 15, fontWeight: '800', marginBottom: 10, padding: 10, borderRadius: 14, backgroundColor: '#1E293B' }, fieldLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 4, marginBottom: 8 }, chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }, chip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#121826' }, chipActive: { backgroundColor: '#1E293B' }, chipDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 }, chipText: { color: '#94A3B8', fontSize: 12, fontWeight: '900' }, chipTextActive: { color: '#F8FAFC' }, colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 }, colorChip: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'transparent' }, colorChipActive: { borderColor: '#F8FAFC' }, modalTitle: { color: '#F8FAFC', fontSize: 28, fontWeight: '900', marginTop: 4 }, timeEditorRow: { flexDirection: 'row', gap: 10, marginBottom: 4 }, timeEditorCell: { flex: 1 }, modalMeta: { color: '#CBD5E1', fontWeight: '800', marginTop: 4, marginBottom: 16 }, controlGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, controlBtn: { width: (width - 62) / 2, padding: 13, borderRadius: 16, backgroundColor: '#1E293B', alignItems: 'center' }, controlText: { color: '#E2E8F0', fontWeight: '900' }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 18 }, secondaryBtn: { padding: 13 }, secondaryText: { color: '#94A3B8', fontWeight: '900' }, deleteBtn: { backgroundColor: '#3F1D1D', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 13 }, deleteText: { color: '#FCA5A5', fontWeight: '900' }, saveBtn: { backgroundColor: '#F97316', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 13 }, saveText: { color: '#FFF7ED', fontWeight: '900' },
 });
