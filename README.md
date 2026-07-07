@@ -11,6 +11,8 @@ npm install
 npm run web
 ```
 
+The project declares the React web packages expected by Expo and React Native Web tooling (`react`, `react-dom`, and `react-native-web`), so a clean `npm install` restores web support before launch.
+
 The server listens on all interfaces by default and prints a Windows browser URL, usually <http://localhost:5173>, and automatically opens it. If your browser blocks automatic launch, open that URL in Microsoft Edge, Chrome, Firefox, or another modern browser on Windows.
 
 If you need a different port, start the app with an explicit `PORT` value:
@@ -27,7 +29,7 @@ $env:PORT=5174; npm run web
 
 ## Web configuration
 
-The browser server is configured in `web.config.json`. It binds to `0.0.0.0`, defaults to port `5173`, and opens the default browser when launched through `npm run web`. The app has no required runtime npm dependencies; `npm install` restores the lockfile state and the built-in Node server handles local web delivery.
+The browser server is configured in `web.config.json`. It binds to `0.0.0.0`, defaults to port `5173`, opens the default browser when launched through `npm run web`, and records the required web dependencies plus the `react-native` to `react-native-web` alias for tooling that reads the web configuration. The built-in Node server handles local web delivery.
 
 ## Development target
 
