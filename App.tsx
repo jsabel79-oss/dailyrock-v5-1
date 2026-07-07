@@ -11,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -21,11 +22,11 @@ type Editing = { mode: 'activity'; id?: string; schedule: 'today' | 'ghost'; dra
 const START_HOUR = 0;
 const END_HOUR = 24;
 const SNAP = 5;
-const INITIAL_PX_PER_MIN = 1;
+const { width, height } = Dimensions.get('window');
+const INITIAL_PX_PER_MIN = clamp((height - 220) / (10 * 60), 0.72, 1.05);
 const MIN_PX_PER_MIN = 0.65;
 const MAX_PX_PER_MIN = 2.6;
 const MIN_DURATION = 15;
-const { width } = Dimensions.get('window');
 
 const palette: Record<string, string> = {
   Faith: '#8B5CF6', Health: '#22C55E', 'Lead Generation': '#F97316', Business: '#38BDF8',
@@ -89,9 +90,10 @@ function ActivityTile({ item, onChange, onEdit, faded, pxPerMin }: { item: Activ
   );
 }
 
-function Schedule({ data, setData, onEdit, onCreate, ghost = false }: { data: Activity[]; setData: (d: Activity[]) => void; onEdit: (item: Activity) => void; onCreate: (start: number) => void; ghost?: boolean }) {
+function Schedule({ data, setData, onEdit, onCreate, showNow = false }: { data: Activity[]; setData: (d: Activity[]) => void; onEdit: (item: Activity) => void; onCreate: (start: number) => void; showNow?: boolean }) {
   const [now, setNow] = useState(new Date());
   const [pxPerMin, setPxPerMin] = useState(INITIAL_PX_PER_MIN);
+  const [isPinching, setIsPinching] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const pinch = useRef({ distance: 0, px: INITIAL_PX_PER_MIN });
   useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id); }, []);
@@ -99,15 +101,16 @@ function Schedule({ data, setData, onEdit, onCreate, ghost = false }: { data: Ac
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
   const timelineHeight = (END_HOUR - START_HOUR) * 60 * pxPerMin;
-  return <ScrollView ref={scrollRef} style={styles.scroller} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-    <Pressable onPress={(event) => onCreate(clamp(snap(event.nativeEvent.locationY / pxPerMin), 0, END_HOUR * 60 - MIN_DURATION))}>
+  return <ScrollView ref={scrollRef} scrollEnabled={!isPinching} style={styles.scroller} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+    <Pressable disabled={isPinching} onPress={(event) => onCreate(clamp(snap(event.nativeEvent.locationY / pxPerMin), 0, END_HOUR * 60 - MIN_DURATION))}>
       <View style={[styles.timelineWrap, { height: timelineHeight + 80 }]}
-        onTouchStart={(e) => { if (e.nativeEvent.touches.length === 2) pinch.current = { distance: distance(e.nativeEvent.touches), px: pxPerMin }; }}
-        onTouchMove={(e) => { if (e.nativeEvent.touches.length === 2 && pinch.current.distance > 0) setPxPerMin(clamp(pinch.current.px * (distance(e.nativeEvent.touches) / pinch.current.distance), MIN_PX_PER_MIN, MAX_PX_PER_MIN)); }}>
+        onTouchStart={(e) => { if (e.nativeEvent.touches.length === 2) { setIsPinching(true); pinch.current = { distance: distance(e.nativeEvent.touches), px: pxPerMin }; } }}
+        onTouchMove={(e) => { if (e.nativeEvent.touches.length === 2 && pinch.current.distance > 0) setPxPerMin(clamp(pinch.current.px * (distance(e.nativeEvent.touches) / pinch.current.distance), MIN_PX_PER_MIN, MAX_PX_PER_MIN)); }}
+        onTouchEnd={() => { setIsPinching(false); pinch.current.distance = 0; }}>
         {hours.map(h => <View key={h} style={[styles.hourRow, { top: (h - START_HOUR) * 60 * pxPerMin }]}><Text style={styles.hourText}>{timeLabel(h * 60)}</Text><View style={styles.hourLine} /></View>)}
         <View style={[styles.windowHint, { top: 7 * 60 * pxPerMin }]}><Text style={styles.windowHintText}>Default day view starts here</Text></View>
-        {nowMinutes >= START_HOUR * 60 && nowMinutes <= END_HOUR * 60 && <View style={[styles.nowLine, { top: topFor(nowMinutes, pxPerMin) }]}><View style={styles.nowDot} /><Text style={styles.nowText}>NOW</Text></View>}
-        {data.map(item => <ActivityTile key={item.id} item={item} pxPerMin={pxPerMin} faded={!ghost && item.start + item.duration < nowMinutes} onEdit={() => onEdit(item)} onChange={(next) => setData(data.map(x => x.id === item.id ? next : x))} />)}
+        {showNow && nowMinutes >= START_HOUR * 60 && nowMinutes <= END_HOUR * 60 && <View style={[styles.nowLine, { top: topFor(nowMinutes, pxPerMin) }]}><View style={styles.nowDot} /><Text style={styles.nowText}>NOW</Text></View>}
+        {data.map(item => <ActivityTile key={item.id} item={item} pxPerMin={pxPerMin} faded={showNow && item.start + item.duration < nowMinutes} onEdit={() => onEdit(item)} onChange={(next) => setData(data.map(x => x.id === item.id ? next : x))} />)}
       </View>
     </Pressable>
   </ScrollView>;
@@ -130,8 +133,8 @@ export default function App() {
     setEditing(null);
   };
   const content = useMemo(() => {
-    if (tab === 'Today') return <Schedule data={today} setData={setToday} onCreate={(start) => setEditing({ mode: 'activity', schedule: 'today', draft: newActivity('New Activity', start, 30) })} onEdit={(item) => setEditing({ mode: 'activity', schedule: 'today', id: item.id, draft: item })} />;
-    if (tab === 'Ghost') return <><View style={styles.copyBar}><Text style={styles.copyText}>Permanent template day</Text><Pressable style={styles.copyBtn} onPress={() => Alert.alert('Replace Today?', 'Copy Ghost to Today and replace the current live schedule?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Replace', style: 'destructive', onPress: () => setToday(ghost.map(x => ({ ...x, id: `copy-${x.id}-${Date.now()}` }))) }])}><Text style={styles.copyBtnText}>Copy Ghost → Today</Text></Pressable></View><Schedule data={ghost} setData={setGhost} ghost onCreate={(start) => setEditing({ mode: 'activity', schedule: 'ghost', draft: newActivity('New Template', start, 30) })} onEdit={(item) => setEditing({ mode: 'activity', schedule: 'ghost', id: item.id, draft: item })} /></>;
+    if (tab === 'Today') return <Schedule data={today} setData={setToday} showNow onCreate={(start) => setEditing({ mode: 'activity', schedule: 'today', draft: newActivity('New Activity', start, 30) })} onEdit={(item) => setEditing({ mode: 'activity', schedule: 'today', id: item.id, draft: item })} />;
+    if (tab === 'Ghost') return <><View style={styles.copyBar}><Text style={styles.copyText}>Permanent template day</Text><Pressable style={styles.copyBtn} onPress={() => Alert.alert('Replace Today?', 'Copy Ghost to Today and replace the current live schedule?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Replace', style: 'destructive', onPress: () => setToday(ghost.map(x => ({ ...x, id: `copy-${x.id}-${Date.now()}` }))) }])}><Text style={styles.copyBtnText}>Copy Ghost → Today</Text></Pressable></View><Schedule data={ghost} setData={setGhost} onCreate={(start) => setEditing({ mode: 'activity', schedule: 'ghost', draft: newActivity('New Template', start, 30) })} onEdit={(item) => setEditing({ mode: 'activity', schedule: 'ghost', id: item.id, draft: item })} /></>;
     if (tab === 'Lists') return <View style={styles.panel}>{reusable.map((x) => <Pressable key={x} style={styles.listItem} onPress={() => setEditing({ mode: 'template', title: x, start: 9 * 60, duration: 30 })}><View><Text style={styles.listTitle}>{x}</Text><Text style={styles.listMeta}>Tap to choose start time and duration</Text></View><Text style={styles.addIcon}>＋</Text></Pressable>)}</View>;
     return <View style={styles.panel}>{['Settings placeholder', 'Dark theme enabled', '5-minute snapping', 'Pinch timeline to zoom'].map(x => <View key={x} style={styles.setting}><Text style={styles.settingText}>{x}</Text><Text style={styles.checkIcon}>✓</Text></View>)}</View>;
   }, [tab, today, ghost]);
@@ -141,14 +144,36 @@ export default function App() {
 function EditModal({ editing, setEditing, onSave, onDelete }: { editing: Editing; setEditing: (e: Editing) => void; onSave: (draft: Activity, schedule: 'today' | 'ghost', id?: string) => void; onDelete: (schedule: 'today' | 'ghost', id?: string) => void }) {
   if (!editing) return null;
   const isTemplate = editing.mode === 'template';
-  const title = isTemplate ? editing.title : editing.draft.title;
-  const start = isTemplate ? editing.start : editing.draft.start;
-  const duration = isTemplate ? editing.duration : editing.draft.duration;
-  const updateTime = (nextStart: number, nextDuration: number) => isTemplate
-    ? setEditing({ ...editing, start: clamp(nextStart, 0, END_HOUR * 60 - MIN_DURATION), duration: clamp(nextDuration, MIN_DURATION, 240) })
-    : setEditing({ ...editing, draft: { ...editing.draft, start: clamp(nextStart, 0, END_HOUR * 60 - MIN_DURATION), duration: clamp(nextDuration, MIN_DURATION, 240) } });
-  const save = () => isTemplate ? onSave(newActivity(title, start, duration), 'today') : onSave(editing.draft, editing.schedule, editing.id);
-  return <Modal transparent animationType="fade" visible><View style={styles.modalShade}><View style={styles.modalCard}><Text style={styles.modalKicker}>{isTemplate ? 'Insert into Today' : 'Edit Activity'}</Text><Text style={styles.modalTitle}>{title}</Text><Text style={styles.modalMeta}>{timeLabel(start)} • {duration} min</Text><View style={styles.controlGrid}>{[-30,-15,15,30].map(v => <Pressable key={`s${v}`} style={styles.controlBtn} onPress={() => updateTime(snap(start + v), duration)}><Text style={styles.controlText}>{v > 0 ? '+' : ''}{v} start</Text></Pressable>)}{[-15,15,30,60].map(v => <Pressable key={`d${v}`} style={styles.controlBtn} onPress={() => updateTime(start, snap(duration + v))}><Text style={styles.controlText}>{v > 0 ? '+' : ''}{v} min</Text></Pressable>)}</View><View style={styles.modalActions}><Pressable style={styles.secondaryBtn} onPress={() => setEditing(null)}><Text style={styles.secondaryText}>Cancel</Text></Pressable>{!isTemplate && <Pressable style={styles.deleteBtn} onPress={() => onDelete(editing.schedule, editing.id)}><Text style={styles.deleteText}>Delete</Text></Pressable>}<Pressable style={styles.saveBtn} onPress={save}><Text style={styles.saveText}>{isTemplate ? 'Insert' : 'Save'}</Text></Pressable></View></View></View></Modal>;
+  const draft = isTemplate ? newActivity(editing.title, editing.start, editing.duration) : editing.draft;
+  const categories = Object.keys(palette);
+  const setDraft = (next: Activity) => {
+    if (isTemplate) return;
+    setEditing({ ...editing, draft: next });
+  };
+  const updateTemplate = (title: string, start: number, duration: number) => {
+    if (!isTemplate) return;
+    setEditing({ ...editing, title, start: clamp(start, 0, END_HOUR * 60 - MIN_DURATION), duration: clamp(duration, MIN_DURATION, END_HOUR * 60) });
+  };
+  const updateActivity = (patch: Partial<Activity>) => {
+    if (isTemplate) return;
+    const nextCategory = patch.category ?? draft.category;
+    setDraft({ ...draft, ...patch, color: patch.color ?? (patch.category ? palette[nextCategory] ?? draft.color : draft.color) });
+  };
+  const updateTime = (nextStart: number, nextDuration: number) => {
+    const safeStart = clamp(snap(nextStart), 0, END_HOUR * 60 - MIN_DURATION);
+    const safeDuration = clamp(snap(nextDuration), MIN_DURATION, END_HOUR * 60 - safeStart);
+    isTemplate ? updateTemplate(editing.title, safeStart, safeDuration) : updateActivity({ start: safeStart, duration: safeDuration });
+  };
+  const save = () => isTemplate ? onSave(newActivity(editing.title, editing.start, editing.duration), 'today') : onSave(draft, editing.schedule, editing.id);
+  return <Modal transparent animationType="fade" visible><View style={styles.modalShade}><View style={styles.modalCard}>
+    <Text style={styles.modalKicker}>{isTemplate ? 'Insert into Today' : `Edit ${editing.schedule === 'ghost' ? 'Ghost' : 'Today'} Activity`}</Text>
+    <TextInput style={styles.textField} value={isTemplate ? editing.title : draft.title} placeholder="Activity title" placeholderTextColor="#64748B" onChangeText={(text) => isTemplate ? updateTemplate(text, editing.start, editing.duration) : updateActivity({ title: text })} />
+    {!isTemplate && <><Text style={styles.fieldLabel}>Category</Text><TextInput style={styles.compactField} value={draft.category} placeholder="Category" placeholderTextColor="#64748B" onChangeText={(category) => updateActivity({ category })} /><View style={styles.chipGrid}>{categories.map(category => <Pressable key={category} style={[styles.chip, draft.category === category && styles.chipActive, { borderColor: palette[category] }]} onPress={() => updateActivity({ category })}><View style={[styles.chipDot, { backgroundColor: palette[category] }]} /><Text style={[styles.chipText, draft.category === category && styles.chipTextActive]}>{category}</Text></Pressable>)}</View></>}
+    {!isTemplate && <><Text style={styles.fieldLabel}>Color</Text><View style={styles.colorRow}>{Object.entries(palette).map(([name, color]) => <Pressable key={name} accessibilityLabel={`${name} color`} style={[styles.colorChip, { backgroundColor: color }, draft.color === color && styles.colorChipActive]} onPress={() => updateActivity({ color })} />)}</View></>}
+    <Text style={styles.modalMeta}>{timeLabel(isTemplate ? editing.start : draft.start)} • {(isTemplate ? editing.duration : draft.duration)} min</Text>
+    <View style={styles.controlGrid}>{[-30,-15,15,30].map(v => <Pressable key={`s${v}`} style={styles.controlBtn} onPress={() => updateTime((isTemplate ? editing.start : draft.start) + v, isTemplate ? editing.duration : draft.duration)}><Text style={styles.controlText}>{v > 0 ? '+' : ''}{v} start</Text></Pressable>)}{[-15,15,30,60].map(v => <Pressable key={`d${v}`} style={styles.controlBtn} onPress={() => updateTime(isTemplate ? editing.start : draft.start, (isTemplate ? editing.duration : draft.duration) + v)}><Text style={styles.controlText}>{v > 0 ? '+' : ''}{v} min</Text></Pressable>)}</View>
+    <View style={styles.modalActions}><Pressable style={styles.secondaryBtn} onPress={() => setEditing(null)}><Text style={styles.secondaryText}>Cancel</Text></Pressable>{!isTemplate && <Pressable style={styles.deleteBtn} onPress={() => onDelete(editing.schedule, editing.id)}><Text style={styles.deleteText}>Delete</Text></Pressable>}<Pressable style={styles.saveBtn} onPress={save}><Text style={styles.saveText}>{isTemplate ? 'Insert' : 'Save'}</Text></Pressable></View>
+  </View></View></Modal>;
 }
 
 const styles = StyleSheet.create({
@@ -159,5 +184,5 @@ const styles = StyleSheet.create({
   nav: { position: 'absolute', left: 14, right: 14, bottom: 12, height: 72, borderRadius: 28, backgroundColor: 'rgba(15,23,42,0.96)', flexDirection: 'row', padding: 8, borderWidth: 1, borderColor: '#1E293B' }, navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 22 }, navActive: { backgroundColor: '#F97316' }, navText: { color: '#64748B', fontSize: 11, fontWeight: '800', marginTop: 3 }, navTextActive: { color: '#FFF7ED' }, navIcon: { color: '#64748B', fontSize: 20, fontWeight: '900' }, navIconActive: { color: '#FFF7ED' },
   copyBar: { marginHorizontal: 18, marginBottom: 8, padding: 12, backgroundColor: '#111827', borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, copyText: { color: '#E2E8F0', fontWeight: '800' }, copyBtn: { backgroundColor: '#F97316', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14 }, copyBtnText: { color: '#FFF7ED', fontWeight: '900' },
   panel: { flex: 1, paddingHorizontal: 18, paddingTop: 4, paddingBottom: 100 }, listItem: { backgroundColor: '#121826', borderRadius: 22, borderWidth: 1, borderColor: '#1E293B', padding: 18, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, listTitle: { color: '#F8FAFC', fontSize: 18, fontWeight: '900' }, listMeta: { color: '#94A3B8', marginTop: 4, fontWeight: '700' }, setting: { backgroundColor: '#121826', borderRadius: 22, borderWidth: 1, borderColor: '#1E293B', padding: 18, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, settingText: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' }, addIcon: { color: '#F97316', fontSize: 30, fontWeight: '900' }, checkIcon: { color: '#22C55E', fontSize: 24, fontWeight: '900' },
-  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }, modalCard: { backgroundColor: '#111827', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 22, borderWidth: 1, borderColor: '#1E293B' }, modalKicker: { color: '#F97316', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }, modalTitle: { color: '#F8FAFC', fontSize: 28, fontWeight: '900', marginTop: 4 }, modalMeta: { color: '#CBD5E1', fontWeight: '800', marginTop: 4, marginBottom: 16 }, controlGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, controlBtn: { width: (width - 62) / 2, padding: 13, borderRadius: 16, backgroundColor: '#1E293B', alignItems: 'center' }, controlText: { color: '#E2E8F0', fontWeight: '900' }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 18 }, secondaryBtn: { padding: 13 }, secondaryText: { color: '#94A3B8', fontWeight: '900' }, deleteBtn: { backgroundColor: '#3F1D1D', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 13 }, deleteText: { color: '#FCA5A5', fontWeight: '900' }, saveBtn: { backgroundColor: '#F97316', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 13 }, saveText: { color: '#FFF7ED', fontWeight: '900' },
+  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }, modalCard: { backgroundColor: '#111827', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 22, borderWidth: 1, borderColor: '#1E293B' }, modalKicker: { color: '#F97316', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }, textField: { color: '#F8FAFC', fontSize: 24, fontWeight: '900', marginTop: 8, marginBottom: 12, padding: 12, borderRadius: 16, backgroundColor: '#1E293B' }, compactField: { color: '#F8FAFC', fontSize: 15, fontWeight: '800', marginBottom: 10, padding: 10, borderRadius: 14, backgroundColor: '#1E293B' }, fieldLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 4, marginBottom: 8 }, chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }, chip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#121826' }, chipActive: { backgroundColor: '#1E293B' }, chipDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 }, chipText: { color: '#94A3B8', fontSize: 12, fontWeight: '900' }, chipTextActive: { color: '#F8FAFC' }, colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 }, colorChip: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'transparent' }, colorChipActive: { borderColor: '#F8FAFC' }, modalTitle: { color: '#F8FAFC', fontSize: 28, fontWeight: '900', marginTop: 4 }, modalMeta: { color: '#CBD5E1', fontWeight: '800', marginTop: 4, marginBottom: 16 }, controlGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, controlBtn: { width: (width - 62) / 2, padding: 13, borderRadius: 16, backgroundColor: '#1E293B', alignItems: 'center' }, controlText: { color: '#E2E8F0', fontWeight: '900' }, modalActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 18 }, secondaryBtn: { padding: 13 }, secondaryText: { color: '#94A3B8', fontWeight: '900' }, deleteBtn: { backgroundColor: '#3F1D1D', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 13 }, deleteText: { color: '#FCA5A5', fontWeight: '900' }, saveBtn: { backgroundColor: '#F97316', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 13 }, saveText: { color: '#FFF7ED', fontWeight: '900' },
 });
