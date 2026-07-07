@@ -8,7 +8,8 @@
     "android": "node scripts/start-expo-lan.js --android --go",
     "ios": "node scripts/start-expo-lan.js --ios --go",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "dependencies": {
     "expo": "~54.0.0",
