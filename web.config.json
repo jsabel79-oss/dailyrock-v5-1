@@ -3,12 +3,6 @@
   "port": 5173,
   "open": true,
   "root": ".",
-  "dependencies": [
-    "react",
-    "react-dom",
-    "react-native-web"
-  ],
-  "aliases": {
-    "reactNative": "react-native-web"
-  }
+  "dependencies": [],
+  "aliases": {}
 }
