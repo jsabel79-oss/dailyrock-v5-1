@@ -3,7 +3,6 @@
 const { spawn } = require('node:child_process');
 const { networkInterfaces } = require('node:os');
 
-const CONFIGURED_LAN_IP = '192.168.1.233';
 const HOST_ENV_KEYS = ['EXPO_LAN_IP', 'DAILYROCK_EXPO_HOST', 'REACT_NATIVE_PACKAGER_HOSTNAME'];
 
 function isIPv4Address(value) {
@@ -55,18 +54,9 @@ function getLanIpAddress(interfaces = networkInterfaces(), env = process.env) {
     }
   }
 
-  const configuredCandidate = candidates.find((address) => address === CONFIGURED_LAN_IP);
-  if (configuredCandidate) {
-    return { address: configuredCandidate, source: 'network interface' };
-  }
-
   const physicalLanCandidate = candidates.find((address) => !isLikelyVirtualAddress(address));
   if (physicalLanCandidate) {
     return { address: physicalLanCandidate, source: 'network interface' };
-  }
-
-  if (isIPv4Address(CONFIGURED_LAN_IP)) {
-    return { address: CONFIGURED_LAN_IP, source: 'project LAN configuration' };
   }
 
   const privateCandidate = candidates[0];
@@ -76,7 +66,7 @@ function getLanIpAddress(interfaces = networkInterfaces(), env = process.env) {
 
   for (const addresses of Object.values(interfaces)) {
     for (const address of addresses ?? []) {
-      if (address.family === 'IPv4' && !address.internal) {
+      if (address.family === 'IPv4' && !address.internal && !address.address.startsWith('127.')) {
         return { address: address.address, source: 'network interface' };
       }
     }
@@ -85,19 +75,38 @@ function getLanIpAddress(interfaces = networkInterfaces(), env = process.env) {
   return null;
 }
 
-function startExpo() {
-  const lanHost = getLanIpAddress();
-  const expoArgs = ['expo', 'start', '--lan', ...process.argv.slice(2)];
-  const env = { ...process.env };
+function buildExpoArgs(args = process.argv.slice(2)) {
+  return ['expo', 'start', '--host', 'lan', ...args];
+}
 
+function buildExpoEnv(baseEnv = process.env, lanHost = getLanIpAddress()) {
+  const env = { ...baseEnv };
+
+  // Expo's URL creator gives proxy variables precedence over LAN host mode. If this
+  // is inherited as a localhost URL, the QR code becomes exp://127.0.0.1:8081.
   delete env.EXPO_PACKAGER_PROXY_URL;
 
   if (lanHost) {
     env.REACT_NATIVE_PACKAGER_HOSTNAME = lanHost.address;
-    console.log(`Starting Expo on LAN host ${lanHost.address} (${lanHost.source})`);
   } else {
     delete env.REACT_NATIVE_PACKAGER_HOSTNAME;
-    console.warn('No non-loopback IPv4 address was found; Expo will infer the LAN host.');
+  }
+
+  return env;
+}
+
+function startExpo() {
+  const lanHost = getLanIpAddress();
+  const expoArgs = buildExpoArgs();
+  const env = buildExpoEnv(process.env, lanHost);
+
+  if (lanHost) {
+    console.log(`Starting Expo on LAN host ${lanHost.address} (${lanHost.source})`);
+  } else {
+    console.warn(
+      'No non-loopback IPv4 address was found; Expo will infer the LAN host. ' +
+        'Set EXPO_LAN_IP to your computer\'s Wi-Fi IPv4 address if Expo still prints localhost.'
+    );
   }
 
   const child = spawn('npx', expoArgs, {
@@ -121,7 +130,9 @@ if (require.main === module) {
 }
 
 module.exports = {
-  CONFIGURED_LAN_IP,
+  HOST_ENV_KEYS,
+  buildExpoArgs,
+  buildExpoEnv,
   getLanIpAddress,
   isIPv4Address,
 };
