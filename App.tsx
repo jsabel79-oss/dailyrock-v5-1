@@ -82,7 +82,7 @@ function ActivityTile({ item, onChange, onEdit, onInteraction, faded, pxPerMin }
   const dragOrigin = useRef(item);
   const resizeOrigin = useRef(item);
   const moved = useRef(false);
-  const drag = PanResponder.create({
+  const drag = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 2,
     onPanResponderGrant: () => { moved.current = false; dragOrigin.current = item; onInteraction(); },
@@ -93,14 +93,14 @@ function ActivityTile({ item, onChange, onEdit, onInteraction, faded, pxPerMin }
       onChange({ ...dragOrigin.current, start: clamp(dragOrigin.current.start + delta, START_HOUR * 60, maxStart) });
     },
     onPanResponderRelease: () => { onInteraction(); if (!moved.current) onEdit(); },
-  });
-  const resizeBottom = PanResponder.create({
+  }), [item, onChange, onEdit, onInteraction, pxPerMin]);
+  const resizeBottom = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: () => { resizeOrigin.current = item; onInteraction(); },
     onPanResponderMove: (_, g) => onChange({ ...resizeOrigin.current, duration: clamp(snap(resizeOrigin.current.duration + g.dy / pxPerMin), MIN_DURATION, END_HOUR * 60 - resizeOrigin.current.start) }),
     onPanResponderRelease: onInteraction,
-  });
+  }), [item, onChange, onInteraction, pxPerMin]);
   return (
     <Animated.View style={[styles.tile, { top: topFor(item.start, pxPerMin), height: item.duration * pxPerMin, borderColor: item.color, opacity: faded ? 0.46 : 1 }]} {...drag.panHandlers}>
       <View style={[styles.tileGlow, { backgroundColor: item.color }]} />
@@ -118,8 +118,14 @@ function Schedule({ data, setData, onEdit, onCreate, showNow = false }: { data: 
   const scrollRef = useRef<ScrollView>(null);
   const pinch = useRef({ distance: 0, px: INITIAL_PX_PER_MIN });
   const suppressCreate = useRef(false);
-  const markActivityInteraction = () => { suppressCreate.current = true; setTimeout(() => { suppressCreate.current = false; }, 120); };
+  const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markActivityInteraction = () => {
+    suppressCreate.current = true;
+    if (suppressTimer.current) clearTimeout(suppressTimer.current);
+    suppressTimer.current = setTimeout(() => { suppressCreate.current = false; suppressTimer.current = null; }, 120);
+  };
   useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id); }, []);
+  useEffect(() => () => { if (suppressTimer.current) clearTimeout(suppressTimer.current); }, []);
   useEffect(() => { requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 7 * 60 * pxPerMin - 8, animated: false })); }, []);
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
