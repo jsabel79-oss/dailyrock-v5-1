@@ -17,13 +17,13 @@ function localNetworkUrls(boundPort = port) {
 }
 
 function printStartupUrls(boundPort = port) {
-  console.log(`Daily Rock browser app running at http://localhost:${boundPort}`);
+  console.log(`Daily Rock Windows browser app running at http://localhost:${boundPort}`);
   const urls = localNetworkUrls(boundPort);
   if (urls.length === 0) {
-    console.log('No LAN IPv4 address found. Connect the iPhone to the same network and set HOST to a reachable address if needed.');
+    console.log('No LAN IPv4 address found. The Windows browser can still use the localhost URL above.');
     return;
   }
-  console.log('Open one of these LAN URLs on a physical iPhone connected to the same network:');
+  console.log('Optional LAN URLs for another browser on your network:');
   urls.forEach((url) => console.log(`  ${url}`));
 }
 
