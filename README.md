@@ -1,16 +1,15 @@
 # Daily Rock V5.1
 
-A freshly scaffolded Expo SDK 54 project containing the migrated Daily Rock V5 application.
+Daily Rock is now a desktop-first browser application for development on a Windows laptop. The browser app keeps the same schedule, Ghost template, Lists, Settings, edit modal, time snapping, drag-to-move, resize, and dark UI direction while making the web browser the primary target.
 
-## Why SDK 54?
-
-Expo's current create-expo-app documentation notes that during the SDK 57 transition period, physical-device Expo Go projects should use SDK 54. This project therefore uses the current recommended Expo Go-compatible SDK and a clean Expo entry point instead of the previous repaired configuration.
-
-## Run on a physical iPhone with Expo Go
+## Run the browser app
 
 ```sh
-npm install
-npx expo start --host lan --go
+npm start
 ```
 
-The project `npm start` script runs `scripts/start-expo-lan.js`, which selects a non-loopback LAN IPv4 address and sets `REACT_NATIVE_PACKAGER_HOSTNAME` before launching Expo in LAN mode.
+Open the printed local URL, usually <http://localhost:5173>, in your desktop browser.
+
+## Development target
+
+The primary development target is the browser. iPhone and Expo work is intentionally paused until the browser version is complete and stable.
